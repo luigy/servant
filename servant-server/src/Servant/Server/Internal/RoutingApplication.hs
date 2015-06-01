@@ -15,6 +15,10 @@ import qualified Data.ByteString                    as B
 import qualified Data.ByteString.Lazy               as BL
 import           Data.IORef                         (newIORef, readIORef,
                                                      writeIORef)
+import           Data.Maybe                         (fromMaybe)
+import           Data.Monoid                        ((<>))
+import           Data.String                        (fromString)
+import           Network.HTTP.Types                 hiding (Header, ResponseHeaders)
 import           Network.Wai                        (Application, Request,
                                                      Response, ResponseReceived,
                                                      requestBody,

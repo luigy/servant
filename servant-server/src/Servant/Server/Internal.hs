@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -20,12 +21,13 @@ module Servant.Server.Internal
   ) where
 
 #if !MIN_VERSION_base(4,8,0)
-import           Control.Applicative         ((<$>))
+import           Control.Applicative                        ((<$>))
 #endif
 import           Control.Monad.Trans.Except  (ExceptT)
 import qualified Data.ByteString             as B
 import qualified Data.ByteString.Lazy        as BL
 import qualified Data.Map                    as M
+<<<<<<< 5bc580829bc7954378fcf3fe287867f601ec83b1
 import           Data.Maybe                  (fromMaybe, mapMaybe)
 import           Data.ByteString.Base64      (decodeLenient)
 import qualified Data.ByteString.Lazy        as BL
@@ -57,6 +59,63 @@ import           Servant.API.ContentTypes    (AcceptHeader (..),
 import           Servant.API.ResponseHeaders (GetHeaders, Headers, getHeaders,
                                               getResponse)
 
+=======
+import qualified Data.ByteString                            as B
+import           Data.ByteString.Base64      (decodeLenient)
+import qualified Data.ByteString.Lazy                       as BL
+import qualified Data.Map                                   as M
+import           Data.Maybe                  (mapMaybe, fromMaybe)
+import           Data.String                                (fromString)
+import           Data.String.Conversions                    (cs, (<>), ConvertibleStrings)
+import           Data.Text                                  (Text)
+import qualified Data.Text                                  as T
+import           Data.Text.Encoding                         (decodeUtf8,
+                                                             encodeUtf8)
+import           Data.Typeable
+import           GHC.TypeLits                               (KnownSymbol,
+                                                             symbolVal)
+import           Network.HTTP.Types                         hiding (Header,
+                                                             ResponseHeaders)
+import           Network.Socket                             (SockAddr)
+import           Network.Wai                                (Application,
+                                                             httpVersion,
+                                                             isSecure,
+                                                             lazyRequestBody,
+                                                             rawQueryString,
+                                                             remoteHost,
+                                                             requestHeaders,
+                                                             requestMethod,
+                                                             responseLBS, vault)
+import           Servant.API                                ((:<|>) (..), (:>),
+                                                             Capture, Delete,
+                                                             Get, Header, IsSecure (Secure, NotSecure),
+                                                             MatrixFlag,
+                                                             MatrixParam,
+                                                             MatrixParams,
+                                                             Patch, Post, Put,
+                                                             QueryFlag,
+                                                             QueryParam,
+                                                             QueryParams, Raw,
+                                                             RemoteHost,
+                                                             ReqBody, Vault)
+import           Servant.API.Authentication                 (AuthPolicy (Strict, Lax),
+                                                             AuthProtect,
+                                                             AuthProtected)
+import           Servant.API.ContentTypes                   (AcceptHeader (..),
+                                                             AllCTRender (..),
+                                                             AllCTUnrender (..))
+import           Servant.API.ResponseHeaders                (GetHeaders,
+                                                             Headers,
+                                                             getHeaders,
+                                                             getResponse)
+import           Servant.Common.Text                        (FromText, fromText)
+import           Servant.Server.Internal.Authentication     (AuthData (authData),
+                                                             AuthProtected (..),
+                                                             checkAuthStrict,
+                                                             onMissingAuthData,
+                                                             onUnauthenticated)
+import           Servant.Server.Internal.PathInfo
+>>>>>>> Second Iteration of Authentication
 import           Servant.Server.Internal.Router
 import           Servant.Server.Internal.RoutingApplication
 import           Servant.Server.Internal.ServantErr
@@ -70,18 +129,6 @@ class HasServer layout where
   route :: Proxy layout -> Delayed (Server layout) -> Router
 
 type Server layout = ServerT layout (ExceptT ServantErr IO)
-
--- | A type-indexed class to encapsulate Basic authentication handling.
--- Authentication handling is indexed by the lookup type.
---
--- > data ExampleAuthDB
--- > data ExampleUser
--- > instance BasicAuthLookup ExampleAuthDB where
--- >   type BasicAuthVal = ExampleUser
--- >   basicAuthLookup _ _ _ = return Nothing
-class BasicAuthLookup lookup where
-    type BasicAuthVal lookup :: *
-    basicAuthLookup :: Proxy lookup -> B.ByteString -> B.ByteString -> IO (Maybe (BasicAuthVal lookup))
 
 -- * Instances
 
@@ -256,54 +303,74 @@ instance
 
   route Proxy = methodRouterHeaders methodDelete (Proxy :: Proxy ctypes) ok200
 
--- | Authentication
+-- | Authentication in Strict mode.
 instance
 #if MIN_VERSION_base(4,8,0)
          {-# OVERLAPPABLE #-}
 #endif
-    ( HasServer sublayout
-    , BasicAuthLookup lookup
-    , KnownSymbol realm
-    )
-    => HasServer (BasicAuth realm lookup :> sublayout) where
+         (AuthData authdata , HasServer sublayout) => HasServer (AuthProtect authdata (usr :: *) 'Strict :> sublayout) where
 
-    type ServerT (BasicAuth realm lookup :> sublayout) m
-        = BasicAuthVal lookup -> ServerT sublayout m
+    type ServerT (AuthProtect authdata usr 'Strict :> sublayout) m = AuthProtected authdata usr (usr -> ServerT sublayout m) 'Strict
 
-    route _ action request respond =
-        case lookup "Authorization" (requestHeaders request) of
-            Nothing     -> respond . succeedWith $ authFailure401
-            Just authBs ->
-                -- ripped from: https://hackage.haskell.org/package/wai-extra-1.3.4.5/docs/src/Network-Wai-Middleware-HttpAuth.html#basicAuth
-                let (x,y) = B.break isSpace authBs in
-                    if B.map toLower x == "basic"
-                         -- check base64-encoded password
-                    then checkB64AndRespond (B.dropWhile isSpace y)
-                         -- Authenticaiton header is not Basic, fail with 401.
-                    else respond . succeedWith $ authFailure401
-      where
-        realmBytes = (fromString . symbolVal) (Proxy :: Proxy realm)
-        headerBytes = "Basic realm=\"" <> realmBytes <> "\""
-        authFailure401 = responseLBS status401 [("WWW-Authenticate", headerBytes)] ""
-        checkB64AndRespond encoded =
-            case B.uncons passwordWithColonAtHead of
-                Just (_, password) -> do
-                    -- let's check these credentials using the user-provided lookup method
-                    maybeAuthData <- basicAuthLookup (Proxy :: Proxy lookup) username password
-                    case maybeAuthData of
-                        Nothing         -> respond . succeedWith $ authFailure403
-                        (Just authData) ->
-                            route (Proxy :: Proxy sublayout) (action authData) request respond
+    route _ subserver = WithRequest $ \req ->
+        route (Proxy :: Proxy sublayout) $ do
+            -- Note: this may perform IO for each attempt at matching.
+            rr <- routeResult <$> subserver
 
-                -- no username:password present
-                Nothing            -> respond . succeedWith $ authFailure401
-          where
-            authFailure403 = responseLBS status403 [] ""
-            raw = decodeLenient encoded
-            -- split username and password at the colon ':' char.
-            (username, passwordWithColonAtHead) = B.breakByte _colon raw
+            case rr of
+                -- Successful route match, so we extract the author-provided
+                -- auth data.
+                Right authProtectionStrict ->
+                    case authData req of
+                        -- could not pull authenticate data out of the request
+                        Nothing -> do
+                            -- we're in strict mode: don't let the request go
+                            -- call the provided "on missing auth" handler
+                            resp <- onMissingAuthData (authHandlers authProtectionStrict)
+                            return $ failWith (RouteMismatch resp)
 
+                        -- succesfully pulled auth data out of the Request
+                        Just authData' -> do
+                            mUsr <- (checkAuthStrict authProtectionStrict) authData'
+                            case mUsr of
+                                -- this user is not authenticated.
+                                Nothing -> do
+                                    resp <- onUnauthenticated (authHandlers authProtectionStrict) authData'
+                                    return $ failWith (RouteMismatch resp)
 
+                                -- this user is authenticated.
+                                Just usr ->
+                                    (return . succeedWith . subServerStrict authProtectionStrict) usr
+                -- route did not match, propagate failure.
+                Left rMismatch ->
+                    return (failWith rMismatch)
+
+-- | Authentication in Lax mode.
+instance
+#if MIN_VERSION_base(4,8,0)
+         {-# OVERLAPPABLE #-}
+#endif
+         (AuthData authdata , HasServer sublayout) => HasServer (AuthProtect authdata (usr :: *) 'Lax :> sublayout) where
+
+    type ServerT (AuthProtect authdata usr 'Lax :> sublayout) m = AuthProtected authdata usr (Maybe usr -> ServerT sublayout m) 'Lax
+
+    route _ subserver = WithRequest $ \req ->
+        route (Proxy :: Proxy sublayout) $ do
+            -- Note: this may perform IO for each attempt at matching.
+            rr <- routeResult <$> subserver
+                -- Successful route match, so we extract the author-provided
+                -- auth data.
+            case rr of
+                -- route matched, extract author-provided lax authentication data
+                Right authProtectionLax -> do
+                    -- extract a user from the request object and perform
+                    -- authentication on it. In Lax mode, we just pass `Maybe usr`
+                    -- to the autho.
+                    musr <- maybe (pure Nothing) (checkAuthLax authProtectionLax) (authData req)
+                    (return . succeedWith . subServerLax authProtectionLax) musr
+                -- route did not match, propagate failure
+                Left rMismatch ->
+                    return (failWith rMismatch)
 
 -- | When implementing the handler for a 'Get' endpoint,
 -- just like for 'Servant.API.Delete.Delete', 'Servant.API.Post.Post'
@@ -616,7 +683,126 @@ instance (KnownSymbol sym, HasServer sublayout)
           Just Nothing  -> True  -- param is there, with no value
           Just (Just v) -> examine v -- param with a value
           Nothing       -> False -- param not in the query string
-    in  route (Proxy :: Proxy sublayout) (passToServer subserver param)
+    in  route (Proxy :: Proxy sublayout) (feedTo subserver param)
+    where paramname = cs $ symbolVal (Proxy :: Proxy sym)
+          examine v | v == "true" || v == "1" || v == "" = True
+                    | otherwise = False
+
+parseMatrixText :: B.ByteString -> QueryText
+parseMatrixText = parseQueryText
+
+-- | If you use @'MatrixParam' "author" Text@ in one of the endpoints for your API,
+-- this automatically requires your server-side handler to be a function
+-- that takes an argument of type @'Maybe' 'Text'@.
+--
+-- This lets servant worry about looking it up in the query string
+-- and turning it into a value of the type you specify, enclosed
+-- in 'Maybe', because it may not be there and servant would then
+-- hand you 'Nothing'.
+--
+-- You can control how it'll be converted from 'Text' to your type
+-- by simply providing an instance of 'FromText' for your type.
+--
+-- Example:
+--
+-- > type MyApi = "books" :> MatrixParam "author" Text :> Get [Book]
+-- >
+-- > server :: Server MyApi
+-- > server = getBooksBy
+-- >   where getBooksBy :: Maybe Text -> ExceptT ServantErr IO [Book]
+-- >         getBooksBy Nothing       = ...return all books...
+-- >         getBooksBy (Just author) = ...return books by the given author...
+instance (KnownSymbol sym, FromText a, HasServer sublayout)
+      => HasServer (MatrixParam sym a :> sublayout) where
+
+  type ServerT (MatrixParam sym a :> sublayout) m =
+    Maybe a -> ServerT sublayout m
+
+  route Proxy subserver = WithRequest $ \ request ->
+    case parsePathInfo request of
+      (first : _)
+        -> do let querytext = parseMatrixText . encodeUtf8 $ T.tail first
+                  param = case lookup paramname querytext of
+                    Nothing       -> Nothing -- param absent from the query string
+                    Just Nothing  -> Nothing -- param present with no value -> Nothing
+                    Just (Just v) -> fromText v -- if present, we try to convert to
+                                          -- the right type
+              route (Proxy :: Proxy sublayout) (feedTo subserver param)
+      _   -> route (Proxy :: Proxy sublayout) (feedTo subserver Nothing)
+
+    where paramname = cs $ symbolVal (Proxy :: Proxy sym)
+
+-- | If you use @'MatrixParams' "authors" Text@ in one of the endpoints for your API,
+-- this automatically requires your server-side handler to be a function
+-- that takes an argument of type @['Text']@.
+--
+-- This lets servant worry about looking up 0 or more values in the query string
+-- associated to @authors@ and turning each of them into a value of
+-- the type you specify.
+--
+-- You can control how the individual values are converted from 'Text' to your type
+-- by simply providing an instance of 'FromText' for your type.
+--
+-- Example:
+--
+-- > type MyApi = "books" :> MatrixParams "authors" Text :> Get [Book]
+-- >
+-- > server :: Server MyApi
+-- > server = getBooksBy
+-- >   where getBooksBy :: [Text] -> ExceptT ServantErr IO [Book]
+-- >         getBooksBy authors = ...return all books by these authors...
+instance (KnownSymbol sym, FromText a, HasServer sublayout)
+      => HasServer (MatrixParams sym a :> sublayout) where
+
+  type ServerT (MatrixParams sym a :> sublayout) m =
+    [a] -> ServerT sublayout m
+
+  route Proxy subserver = WithRequest $ \ request ->
+    case parsePathInfo request of
+      (first : _)
+        -> do let matrixtext = parseMatrixText . encodeUtf8 $ T.tail first
+                  -- if sym is "foo", we look for matrix parameters
+                  -- named "foo" or "foo[]" and call fromText on the
+                  -- corresponding values
+                  parameters = filter looksLikeParam matrixtext
+                  values = mapMaybe (convert . snd) parameters
+              route (Proxy :: Proxy sublayout) (feedTo subserver values)
+      _ -> route (Proxy :: Proxy sublayout) (feedTo subserver [])
+    where paramname = cs $ symbolVal (Proxy :: Proxy sym)
+          looksLikeParam (name, _) = name == paramname || name == (paramname <> "[]")
+          convert Nothing = Nothing
+          convert (Just v) = fromText v
+
+-- | If you use @'MatrixFlag' "published"@ in one of the endpoints for your API,
+-- this automatically requires your server-side handler to be a function
+-- that takes an argument of type 'Bool'.
+--
+-- Example:
+--
+-- > type MyApi = "books" :> MatrixFlag "published" :> Get [Book]
+-- >
+-- > server :: Server MyApi
+-- > server = getBooks
+-- >   where getBooks :: Bool -> ExceptT ServantErr IO [Book]
+-- >         getBooks onlyPublished = ...return all books, or only the ones that are already published, depending on the argument...
+instance (KnownSymbol sym, HasServer sublayout)
+      => HasServer (MatrixFlag sym :> sublayout) where
+
+  type ServerT (MatrixFlag sym :> sublayout) m =
+    Bool -> ServerT sublayout m
+
+  route Proxy subserver = WithRequest $ \ request ->
+    case parsePathInfo request of
+      (first : _)
+        -> do let matrixtext = parseMatrixText . encodeUtf8 $ T.tail first
+                  param = case lookup paramname matrixtext of
+                    Just Nothing  -> True  -- param is there, with no value
+                    Just (Just v) -> examine v -- param with a value
+                    Nothing       -> False -- param not in the query string
+
+              route (Proxy :: Proxy sublayout) (feedTo subserver param)
+
+      _ -> route (Proxy :: Proxy sublayout) (feedTo subserver False)
     where paramname = cs $ symbolVal (Proxy :: Proxy sym)
           examine v | v == "true" || v == "1" || v == "" = True
                     | otherwise = False
