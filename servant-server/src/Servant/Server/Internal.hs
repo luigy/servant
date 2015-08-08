@@ -66,7 +66,7 @@ import qualified Data.ByteString.Lazy                       as BL
 import qualified Data.Map                                   as M
 import           Data.Maybe                  (mapMaybe, fromMaybe)
 import           Data.String                                (fromString)
-import           Data.String.Conversions                    (cs, (<>), ConvertibleStrings)
+import           Data.String.Conversions                    (ConvertibleStrings, cs, (<>))
 import           Data.Text                                  (Text)
 import qualified Data.Text                                  as T
 import           Data.Text.Encoding                         (decodeUtf8,
@@ -83,6 +83,8 @@ import           Network.Wai                                (Application,
                                                              lazyRequestBody,
                                                              rawQueryString,
                                                              remoteHost,
+                                                             Response,
+                                                             Request,
                                                              requestHeaders,
                                                              requestMethod,
                                                              responseLBS, vault)
@@ -112,8 +114,8 @@ import           Servant.Common.Text                        (FromText, fromText)
 import           Servant.Server.Internal.Authentication     (AuthData (authData),
                                                              AuthProtected (..),
                                                              checkAuthStrict,
-                                                             onMissingAuthData,
-                                                             onUnauthenticated)
+                                                             AuthHandlers(onMissingAuthData,
+                                                             onUnauthenticated))
 import           Servant.Server.Internal.PathInfo
 >>>>>>> Second Iteration of Authentication
 import           Servant.Server.Internal.Router
