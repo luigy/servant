@@ -27,39 +27,6 @@ import           Control.Monad.Trans.Except  (ExceptT)
 import qualified Data.ByteString             as B
 import qualified Data.ByteString.Lazy        as BL
 import qualified Data.Map                    as M
-<<<<<<< 5bc580829bc7954378fcf3fe287867f601ec83b1
-import           Data.Maybe                  (fromMaybe, mapMaybe)
-import           Data.ByteString.Base64      (decodeLenient)
-import qualified Data.ByteString.Lazy        as BL
-import           Data.String                 (fromString)
-import           Data.String.Conversions     (ConvertibleStrings, cs, (<>))
-import           Data.Text                   (Text)
-import           Data.Typeable
-import           Data.Word8                  (isSpace, _colon, toLower)
-import           GHC.TypeLits                (KnownSymbol, symbolVal)
-import           Network.HTTP.Types          hiding (Header, ResponseHeaders)
-import           Network.Socket              (SockAddr)
-import           Network.Wai                 (Application, Request, Response,
-                                              lazyRequestBody, remoteHost,
-                                              pathInfo, rawQueryString,
-                                              requestBody, requestHeaders, isSecure,
-                                              httpVersion, requestMethod, responseLBS,
-                                              strictRequestBody, vault)
-import           Servant.API                 ((:<|>) (..), (:>), BasicAuth, Capture,
-                                               Delete, Get, Header, IsSecure(..),
-                                              MatrixFlag, MatrixParam, MatrixParams,
-                                              Patch, Post, Put, QueryFlag,
-                                              QueryParam, QueryParams, Raw,
-                                              RemoteHost, ReqBody, Vault)
-import           Servant.API.ContentTypes    (AcceptHeader (..),
-                                              AllCTRender (..),
-                                              AllCTUnrender (..),
-                                              AllMime,
-                                              canHandleAcceptH)
-import           Servant.API.ResponseHeaders (GetHeaders, Headers, getHeaders,
-                                              getResponse)
-
-=======
 import qualified Data.ByteString                            as B
 import           Data.ByteString.Base64      (decodeLenient)
 import qualified Data.ByteString.Lazy                       as BL
@@ -72,6 +39,7 @@ import qualified Data.Text                                  as T
 import           Data.Text.Encoding                         (decodeUtf8,
                                                              encodeUtf8)
 import           Data.Typeable
+import           Data.Word8                  (isSpace, _colon, toLower)
 import           GHC.TypeLits                               (KnownSymbol,
                                                              symbolVal)
 import           Network.HTTP.Types                         hiding (Header,
@@ -117,7 +85,6 @@ import           Servant.Server.Internal.Authentication     (AuthData (authData)
                                                              AuthHandlers(onMissingAuthData,
                                                              onUnauthenticated))
 import           Servant.Server.Internal.PathInfo
->>>>>>> Second Iteration of Authentication
 import           Servant.Server.Internal.Router
 import           Servant.Server.Internal.RoutingApplication
 import           Servant.Server.Internal.ServantErr
