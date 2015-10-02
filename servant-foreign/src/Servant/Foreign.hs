@@ -46,13 +46,20 @@ module Servant.Foreign
   , module Servant.API
   ) where
 
-import           Control.Lens (makeLenses, (%~), (&), (.~), (<>~))
-import           Data.Proxy
-import           Data.Text
-import           GHC.Exts     (Constraint)
-import           GHC.TypeLits
+#if !MIN_VERSION_base(4,8,0)
+import Control.Applicative
+#endif
+import           Control.Lens                  (makeLenses, (%~), (&), (.~),
+                                                (<>~), _last)
+import Data.Char (toLower, toUpper)
+import Data.List
+import Data.Proxy
+import Data.Text (Text)
+import GHC.Exts (Constraint)
 import           Prelude      hiding (concat)
-import           Servant.API
+import GHC.TypeLits
+import Servant.API
+import Servant.API.Authentication
 
 -- | Function name builder that simply concat each part together
 concatCase :: FunctionName -> Text
@@ -100,6 +107,10 @@ data HeaderArg = HeaderArg
     { headerArgName :: Text
     , headerPattern :: Text
     } deriving (Eq, Show)
+  | HeaderArgGen
+    { headerArgName    :: Text
+    , headerArgGenBody :: (Text -> Text)
+    } deriving (Eq, Show)
 
 
 data Url = Url
@@ -119,7 +130,7 @@ data Req = Req
   , _reqHeaders :: [HeaderArg]
   , _reqBody    :: Bool
   , _funcName   :: FunctionName
-  } deriving (Eq, Show)
+  }
 
 makeLenses ''QueryArg
 makeLenses ''Segment
@@ -192,6 +203,30 @@ instance (KnownSymbol sym, HasForeign sublayout)
 
     where hname = pack . symbolVal $ (Proxy :: Proxy sym)
           subP = Proxy :: Proxy sublayout
+
+instance (HasForeign sublayout)
+      => HasForeign (AuthProtect (BasicAuth realm) (usr :: *) (policy :: AuthPolicy) :> sublayout) where
+  type Foreign (AuthProtect (BasicAuth realm) (usr :: *) (policy :: AuthPolicy) :> sublayout) = Foreign sublayout
+
+  foreignFor Proxy req =
+    foreignFor (Proxy :: Proxy sublayout) (req & reqHeaders <>~
+      [HeaderArgGen "Authorization" $ \authdata ->
+        "(function("++authdata++"){" ++
+        "return \"Basic \" + btoa("++authdata++".username+\":\"+"++authdata ++ ".password)" ++
+        "})("++authdata++")"
+      ])
+  
+instance (HasForeign sublayout)
+      => HasForeign (AuthProtect Text (usr :: *) (policy :: AuthPolicy) :> sublayout) where
+  type Foreign (AuthProtect Text (usr :: *) (policy :: AuthPolicy) :> sublayout) = Foreign sublayout
+
+  foreignFor Proxy req =
+    foreignFor (Proxy :: Proxy sublayout) (req & reqHeaders <>~
+      [HeaderArgGen "Authorization" $ \authdata ->
+        "(function("++authdata++"){" ++
+        "return \"Bearer \" + "++authdata++";"++
+        "})("++authdata++")"
+      ])
 
 instance Elem JSON list => HasForeign (Post list a) where
   type Foreign (Post list a) = Req
