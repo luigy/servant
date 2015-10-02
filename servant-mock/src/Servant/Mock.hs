@@ -143,8 +143,10 @@ instance (KnownSymbol s, HasMock rest) => HasMock (QueryFlag s :> rest) where
 instance (KnownSymbol h, FromHttpApiData a, HasMock rest) => HasMock (Header h a :> rest) where
   mock _ = \_ -> mock (Proxy :: Proxy rest)
 
-instance (HasMock rest, AuthData authdata, Arbitrary usr) => HasMock (AuthProtect authdata (usr :: *) 'Lax :> rest) where
-  mock _ = laxProtect (\_ -> do { a <- generate arbitrary; return (Just a)}) (\_ -> mock (Proxy :: Proxy rest))
+instance (HasMock rest, AuthData authdata, Arbitrary usr)
+      => HasMock (AuthProtect authdata (usr :: *) 'Lax :> rest) where
+  mock _ = laxProtect (\_ -> do { a <- generate arbitrary; return (Just a)})
+                      (\_ -> mock (Proxy :: Proxy rest))
 
 instance (HasMock rest, Arbitrary usr, KnownSymbol realm)
       => HasMock (AuthProtect (BasicAuth realm) (usr :: *) 'Strict :> rest) where
