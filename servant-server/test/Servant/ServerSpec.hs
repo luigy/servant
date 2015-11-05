@@ -42,13 +42,12 @@ import           Network.Wai.Test           (assertHeader, defaultRequest, reque
 import           Servant.API                ((:<|>) (..), (:>),
                                              addHeader, Capture,
                                              Delete, Get, Header (..), Headers,
-                                             HttpVersion, IsSecure(..), JSON, MatrixFlag,
-                                             MatrixParam, MatrixParams, Patch, PlainText,
+                                             HttpVersion, IsSecure(..), JSON,
+                                             Patch, PlainText,
                                              Post, Put, RemoteHost, QueryFlag, QueryParam,
                                              QueryParams, Raw, ReqBody)
 import           Servant.API.Authentication (BasicAuth)
-import           Servant.Server.Internal    (RouteMismatch (..), BasicAuthLookup(basicAuthLookup, BasicAuthVal))
-import           Servant.Server             (Server, serve, ServantErr(..), err404)
+import           Servant.Server             (Server, serve, ServantErr(..), err404, err409)
 import           Servant.API.Authentication
 import           Servant.Server.Internal.Authentication
 import           Servant.Server.Internal.RoutingApplication (toApplication, RouteResult(..))
@@ -606,69 +605,69 @@ prioErrorsSpec = describe "PrioErrors" $ do
     check put' "/foo" vjson 405
 
 
--- | fake equality to use for testing the RouteMismatch spec (errorSpec).
--- this is a hack around RouteMismatch not having an `Eq` instance.
-(=:=) :: RouteMismatch -> RouteMismatch -> Bool
-NotFound =:= NotFound = True
-WrongMethod =:= WrongMethod = True
-(InvalidBody ib1) =:= (InvalidBody ib2) = ib1 == ib2
-(HttpError s1 hs1 mb1) =:= (HttpError s2 hs2 mb2) = s1 == s2 && hs1 == hs2 && mb1 == mb2
-(RouteMismatch _) =:= (RouteMismatch _) = True
-_ =:= _ = False
+-- -- | fake equality to use for testing the RouteMismatch spec (errorSpec).
+-- -- this is a hack around RouteMismatch not having an `Eq` instance.
+-- (=:=) :: RouteMismatch -> RouteMismatch -> Bool
+-- NotFound =:= NotFound = True
+-- WrongMethod =:= WrongMethod = True
+-- (InvalidBody ib1) =:= (InvalidBody ib2) = ib1 == ib2
+-- (HttpError s1 hs1 mb1) =:= (HttpError s2 hs2 mb2) = s1 == s2 && hs1 == hs2 && mb1 == mb2
+-- (RouteMismatch _) =:= (RouteMismatch _) = True
+-- _ =:= _ = False
 
--- | Test server error functionality.
-errorsSpec :: Spec
-errorsSpec = do
-  let he = HttpError status409 [] (Just "A custom error")
-  let ib = InvalidBody "The body is invalid"
-  let wm = WrongMethod
-  let nf = NotFound
-  let rm = RouteMismatch (responseBuilder status409 [] mempty)
+-- -- | Test server error functionality.
+-- errorsSpec :: Spec
+-- errorsSpec = do
+--   let he = HttpError err409 [] (Just "A custom error")
+--   let ib = InvalidBody "The body is invalid"
+--   let wm = WrongMethod
+--   let nf = NotFound
+--   let rm = RouteMismatch (responseBuilder err409 [] mempty)
 
-  describe "Servant.Server.Internal.RouteMismatch" $ do
-    it "RouteMismatch > *" $ do
-      (ib <> rm) =:= rm `shouldBe` True
-      (wm <> rm) =:= rm `shouldBe` True
-      (nf <> rm) =:= rm `shouldBe` True
-      (he <> rm) =:= rm `shouldBe` True
+--   describe "Servant.Server.Internal.RouteMismatch" $ do
+--     it "RouteMismatch > *" $ do
+--       (ib <> rm) =:= rm `shouldBe` True
+--       (wm <> rm) =:= rm `shouldBe` True
+--       (nf <> rm) =:= rm `shouldBe` True
+--       (he <> rm) =:= rm `shouldBe` True
 
-      (rm <> ib) =:= rm `shouldBe` True
-      (rm <> wm) =:= rm `shouldBe` True
-      (rm <> nf) =:= rm `shouldBe` True
-      (rm <> he) =:= rm `shouldBe` True
+--       (rm <> ib) =:= rm `shouldBe` True
+--       (rm <> wm) =:= rm `shouldBe` True
+--       (rm <> nf) =:= rm `shouldBe` True
+--       (rm <> he) =:= rm `shouldBe` True
 
-    it "RouteMismatch > HttpError > *" $ do
-      (ib <> he) =:= he `shouldBe` True
-      (wm <> he) =:= he `shouldBe` True
-      (nf <> he) =:= he `shouldBe` True
+--     it "RouteMismatch > HttpError > *" $ do
+--       (ib <> he) =:= he `shouldBe` True
+--       (wm <> he) =:= he `shouldBe` True
+--       (nf <> he) =:= he `shouldBe` True
 
-      (he <> ib) =:= he `shouldBe` True
-      (he <> wm) =:= he `shouldBe` True
-      (he <> nf) =:= he `shouldBe` True
+--       (he <> ib) =:= he `shouldBe` True
+--       (he <> wm) =:= he `shouldBe` True
+--       (he <> nf) =:= he `shouldBe` True
 
-    it "HE > InvalidBody > (WM,NF)" $ do
-      (wm <> ib) =:= ib `shouldBe` True
-      (nf <> ib) =:= ib `shouldBe` True
+--     it "HE > InvalidBody > (WM,NF)" $ do
+--       (wm <> ib) =:= ib `shouldBe` True
+--       (nf <> ib) =:= ib `shouldBe` True
 
-      (ib <> wm) =:= ib `shouldBe` True
-      (ib <> nf) =:= ib `shouldBe` True
+--       (ib <> wm) =:= ib `shouldBe` True
+--       (ib <> nf) =:= ib `shouldBe` True
 
-    it "HE > IB > WrongMethod > NF" $ do
-      (nf <> wm) =:= wm `shouldBe` True
+--     it "HE > IB > WrongMethod > NF" $ do
+--       (nf <> wm) =:= wm `shouldBe` True
 
-      (wm <> nf) =:= wm `shouldBe` True
+--       (wm <> nf) =:= wm `shouldBe` True
 
-    -- TODO: this is redundant, but maybe helpful for clarity.
-    it "* > NotFound" $ do
-      (he <> nf) =:= he `shouldBe` True
-      (ib <> nf) =:= ib `shouldBe` True
-      (wm <> nf) =:= wm `shouldBe` True
-      (rm <> nf) =:= rm `shouldBe` True
+--     -- TODO: this is redundant, but maybe helpful for clarity.
+--     it "* > NotFound" $ do
+--       (he <> nf) =:= he `shouldBe` True
+--       (ib <> nf) =:= ib `shouldBe` True
+--       (wm <> nf) =:= wm `shouldBe` True
+--       (rm <> nf) =:= rm `shouldBe` True
 
-      (nf <> he) =:= he `shouldBe` True
-      (nf <> ib) =:= ib `shouldBe` True
-      (nf <> wm) =:= wm `shouldBe` True
-      (nf <> rm) =:= rm `shouldBe` True
+--       (nf <> he) =:= he `shouldBe` True
+--       (nf <> ib) =:= ib `shouldBe` True
+--       (nf <> wm) =:= wm `shouldBe` True
+--       (nf <> rm) =:= rm `shouldBe` True
 
 type MiscCombinatorsAPI
   =    "version" :> HttpVersion :> Get '[JSON] String

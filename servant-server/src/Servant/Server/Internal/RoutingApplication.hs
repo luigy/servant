@@ -165,6 +165,14 @@ data Delayed :: * -> * where
 instance Functor Delayed where
    fmap f (Delayed a b c g) = Delayed a b c ((fmap.fmap.fmap) f g)
 
+
+addAuthCheck :: Delayed a
+             -> IO (RouteResult b)
+             -> Delayed a
+addAuthCheck (Delayed captures method body server) new =
+  Delayed captures method (combineRouteResults const body new) server
+
+
 -- | Add a capture to the end of the capture block.
 addCapture :: Delayed (a -> b)
            -> IO (RouteResult a)

@@ -31,7 +31,6 @@ import           Control.Exception          (bracket)
 import           Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
 import           Data.Aeson
 import           Data.Char
-import qualified Data.ByteString.Base64     as B64
 import           Data.ByteString.Lazy       (ByteString)
 import           Data.Foldable              (forM_)
 import           Data.Monoid                hiding (getLast)
@@ -174,47 +173,6 @@ sucessSpec = beforeAll (startWaiApp server) $ afterAll endWaiApp $ do
 
     it "Servant.API.Get" $ \(_, baseUrl) -> do
       let getGet = getNth (Proxy :: Proxy 0) $ client api baseUrl manager
-
-withFailServer :: (BaseUrl -> IO a) -> IO a
-withFailServer action = withWaiDaemon (return failServer) action
-
-spec :: IO ()
-spec = withServer $ \ baseUrl -> do
-  let getGet :: ExceptT ServantError IO Person
-      getDeleteEmpty :: ExceptT ServantError IO ()
-      getCapture :: String -> ExceptT ServantError IO Person
-      getBody :: Person -> ExceptT ServantError IO Person
-      getQueryParam :: Maybe String -> ExceptT ServantError IO Person
-      getQueryParams :: [String] -> ExceptT ServantError IO [Person]
-      getQueryFlag :: Bool -> ExceptT ServantError IO Bool
-      getMatrixParam :: Maybe String -> ExceptT ServantError IO Person
-      getMatrixParams :: [String] -> ExceptT ServantError IO [Person]
-      getMatrixFlag :: Bool -> ExceptT ServantError IO Bool
-      getRawSuccess :: Method -> ExceptT ServantError IO (Int, ByteString, MediaType, [HTTP.Header], C.Response ByteString)
-      getRawFailure :: Method -> ExceptT ServantError IO (Int, ByteString, MediaType, [HTTP.Header], C.Response ByteString)
-      getMultiple :: String -> Maybe Int -> Bool -> [(String, [Rational])] -> ExceptT ServantError IO (String, Maybe Int, Bool, [(String, [Rational])])
-      getRespHeaders :: ExceptT ServantError IO (Headers TestHeaders Bool)
-      getDeleteContentType :: ExceptT ServantError IO ()
-      (     getGet
-       :<|> getDeleteEmpty
-       :<|> getCapture
-       :<|> getBody
-       :<|> getQueryParam
-       :<|> getQueryParams
-       :<|> getQueryFlag
-       :<|> getMatrixParam
-       :<|> getMatrixParams
-       :<|> getMatrixFlag
-       :<|> getRawSuccess
-       :<|> getRawFailure
-       :<|> getMultiple
-       :<|> getRespHeaders
-       :<|> getDeleteContentType
-       :<|> getPrivatePerson)
-         = client api baseUrl manager
-
-  hspec $ do
-    it "Servant.API.Get" $ do
       (left show <$> runExceptT getGet) `shouldReturn` Right alice
 
     describe "Servant.API.Delete" $ do
@@ -223,7 +181,7 @@ spec = withServer $ \ baseUrl -> do
         (left show <$> runExceptT getDeleteEmpty) `shouldReturn` Right ()
 
       it "allows content type" $ \(_, baseUrl) -> do
-        let getDeleteContentType = getLast $ client api baseUrl manager
+        let getDeleteContentType = getNth (Proxy :: Proxy 11) $ client api baseUrl manager
         (left show <$> runExceptT getDeleteContentType) `shouldReturn` Right ()
 
     it "Servant.API.Capture" $ \(_, baseUrl) -> do
@@ -278,10 +236,12 @@ spec = withServer $ \ baseUrl -> do
         Left e -> assertFailure $ show e
         Right val -> getHeaders val `shouldBe` [("X-Example1", "1729"), ("X-Example2", "eg2")]
 
-    it "Handles Authentication appropriatley" $ withServer $ \ _ -> do
+    it "Handles Authentication appropriatley" $ \(_, baseUrl) -> do
+      let getPrivatePerson = getLast $ client api baseUrl manager
       (Control.Arrow.left show <$> runExceptT (getPrivatePerson (BasicAuth "servant" "server"))) `shouldReturn` Right alice
 
-    it "returns 401 when not properly authenticated" $ do
+    it "returns 401 when not properly authenticated" $ \(_, baseUrl) -> do
+      let getPrivatePerson = getLast $ client api baseUrl manager
       Left res <- runExceptT (getPrivatePerson (BasicAuth "xxx" "yyy"))
       case res of
         FailureResponse (Status 401 _) _ _ -> return ()
@@ -309,17 +269,6 @@ wrappedApiSpec = describe "error status codes" $ do
             Left FailureResponse{..} <- runExceptT getResponse
             responseStatus `shouldBe` (Status 500 "error message")
     in mapM_ test $
-    context "client correctly handles error status codes" $ do
-      let test :: (WrappedApi, String) -> Spec
-          test (WrappedApi api, desc) =
-            it desc $
-            withWaiDaemon (return (serve api (throwE $ ServantErr 500 "error message" "" []))) $
-            \ host -> do
-              let getResponse :: ExceptT ServantError IO ()
-                  getResponse = client api host manager
-              Left FailureResponse{..} <- runExceptT getResponse
-              responseStatus `shouldBe` (Status 500 "error message")
-      mapM_ test $
         (WrappedApi (Proxy :: Proxy (Delete '[JSON] ())), "Delete") :
         (WrappedApi (Proxy :: Proxy (Get '[JSON] ())), "Get") :
         (WrappedApi (Proxy :: Proxy (Post '[JSON] ())), "Post") :

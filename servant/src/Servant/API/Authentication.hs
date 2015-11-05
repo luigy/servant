@@ -6,8 +6,8 @@
 {-# OPTIONS_HADDOCK not-home    #-}
 module Servant.API.Authentication
 ( AuthPolicy (..)
-, AuthProtect (..)
-, AuthProtected (..)
+, AuthProtect
+, AuthProtected
 , BasicAuth (..)
 , JWTAuth
 ) where

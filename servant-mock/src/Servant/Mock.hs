@@ -143,22 +143,22 @@ instance (KnownSymbol s, HasMock rest) => HasMock (QueryFlag s :> rest) where
 instance (KnownSymbol h, FromHttpApiData a, HasMock rest) => HasMock (Header h a :> rest) where
   mock _ = \_ -> mock (Proxy :: Proxy rest)
 
-instance (HasMock rest, AuthData authdata, Arbitrary usr)
-      => HasMock (AuthProtect authdata (usr :: *) 'Lax :> rest) where
-  mock _ = laxProtect (\_ -> do { a <- generate arbitrary; return (Just a)})
-                      (\_ -> mock (Proxy :: Proxy rest))
+-- instance (HasMock rest, AuthData authdata, Arbitrary usr)
+--       => HasMock (AuthProtect authdata (usr :: *) 'Lax :> rest) where
+--   mock _ = laxProtect (\_ -> do { a <- generate arbitrary; return (Just a)})
+--                       (\_ -> mock (Proxy :: Proxy rest))
 
-instance (HasMock rest, Arbitrary usr, KnownSymbol realm)
-      => HasMock (AuthProtect (BasicAuth realm) (usr :: *) 'Strict :> rest) where
-  mock _ = basicAuthStrict (\_ -> do { a <- generate arbitrary; return (Just a)})
-                           (\_ -> mock (Proxy :: Proxy rest))
+-- instance (HasMock rest, Arbitrary usr, KnownSymbol realm)
+--       => HasMock (AuthProtect (BasicAuth realm) (usr :: *) 'Strict :> rest) where
+--   mock _ = basicAuthStrict (\_ -> do { a <- generate arbitrary; return (Just a)})
+--                            (\_ -> mock (Proxy :: Proxy rest))
 
-instance (HasMock rest, Arbitrary usr)
-      => HasMock (AuthProtect JWTAuth (usr :: *) 'Strict :> rest) where
-  mock _ = strictProtect (\_ -> do { a <- generate arbitrary; return (Just a)})
-                         (AuthHandlers (return authFailure) ((const . return) authFailure))
-                         (\_ -> mock (Proxy :: Proxy rest))
-    where authFailure = responseBuilder status401 [] mempty
+-- instance (HasMock rest, Arbitrary usr)
+--       => HasMock (AuthProtect JWTAuth (usr :: *) 'Strict :> rest) where
+--   mock _ = strictProtect (\_ -> do { a <- generate arbitrary; return (Just a)})
+--                          (AuthHandlers (return authFailure) ((const . return) authFailure))
+--                          (\_ -> mock (Proxy :: Proxy rest))
+--     where authFailure = responseBuilder status401 [] mempty
 
 instance (Arbitrary a, AllCTRender ctypes a) => HasMock (Delete ctypes a) where
   mock _ = mockArbitrary

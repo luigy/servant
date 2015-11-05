@@ -49,12 +49,10 @@ module Servant.Foreign
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative
 #endif
-import           Control.Lens                  (makeLenses, (%~), (&), (.~),
-                                                (<>~), _last)
-import Data.Char (toLower, toUpper)
-import Data.List
+import Control.Lens                  (makeLenses, (%~), (&), (.~), (<>~))
+import Data.Monoid ((<>))
 import Data.Proxy
-import Data.Text (Text)
+import Data.Text
 import GHC.Exts (Constraint)
 import           Prelude      hiding (concat)
 import GHC.TypeLits
@@ -106,12 +104,19 @@ data HeaderArg = HeaderArg
   | ReplaceHeaderArg
     { headerArgName :: Text
     , headerPattern :: Text
-    } deriving (Eq, Show)
+    }
   | HeaderArgGen
     { headerArgName    :: Text
     , headerArgGenBody :: (Text -> Text)
-    } deriving (Eq, Show)
-
+    } 
+-- TODO: Fix this
+instance Show HeaderArg where
+  show _ = "fix me"
+instance Eq HeaderArg where
+  (==) (HeaderArgGen n1 _) (HeaderArgGen n2 _) = n1 == n2
+  (==) (HeaderArg n1) (HeaderArg n2) = n1 == n2
+  (==) (ReplaceHeaderArg n1 p1) (ReplaceHeaderArg n2 p2) = n1 == n2 && p1 == p2
+  (==) _ _ = False
 
 data Url = Url
   { _path     :: Path
@@ -211,9 +216,9 @@ instance (HasForeign sublayout)
   foreignFor Proxy req =
     foreignFor (Proxy :: Proxy sublayout) (req & reqHeaders <>~
       [HeaderArgGen "Authorization" $ \authdata ->
-        "(function("++authdata++"){" ++
-        "return \"Basic \" + btoa("++authdata++".username+\":\"+"++authdata ++ ".password)" ++
-        "})("++authdata++")"
+        "(function("<>authdata<>"){" <>
+        "return \"Basic \" + btoa("<>authdata<>".username+\":\"+"<>authdata <> ".password)" <>
+        "})("<>authdata<>")"
       ])
   
 instance (HasForeign sublayout)
@@ -223,9 +228,9 @@ instance (HasForeign sublayout)
   foreignFor Proxy req =
     foreignFor (Proxy :: Proxy sublayout) (req & reqHeaders <>~
       [HeaderArgGen "Authorization" $ \authdata ->
-        "(function("++authdata++"){" ++
-        "return \"Bearer \" + "++authdata++";"++
-        "})("++authdata++")"
+        "(function("<>authdata<>"){" <>
+        "return \"Bearer \" + "<>authdata<>";"<>
+        "})("<>authdata<>")"
       ])
 
 instance Elem JSON list => HasForeign (Post list a) where
