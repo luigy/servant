@@ -243,7 +243,6 @@ instance
 #endif
          ( AllCTRender ctypes a
          ) => HasServer (Delete ctypes a) where
-
   type ServerT (Delete ctypes a) m = m a
 
   route Proxy = methodRouter methodDelete (Proxy :: Proxy ctypes) ok200
@@ -279,92 +278,45 @@ instance
 
     type ServerT (AuthProtect authdata usr 'Strict :> sublayout) m = AuthProtected authdata usr (usr -> ServerT sublayout m) 'Strict
 
-    route _ subserver = WithRequest $ \request ->
-      -- route (Proxy :: Proxy sublayout) (addAuthCheck subserver (authCheck request))
-      -- route (Proxy :: Proxy sublayout) (addAuthCheck subserver (authCheck request))
-      route (Proxy :: Proxy sublayout) undefined
-      -- where
-        -- subserver' request = bindRouteResults subserver (authCheck request)
-        -- authCheck request = do
-          -- fmap (\x -> ) subserver
-          -- case authData request of
-          --   Nothing -> return (Fail err403)
-          --   Just authData' -> do
-          --     -- mUsr <- (checkAuthStrict authProtectionStrict) authData'
-          --     mUsr <- return (Just ())
-          --     case mUsr of
-          --       Nothing -> return (Fail err403)
-          --       Just usr -> return (Route usr)
-                -- Just usr -> return ((subServerStrict authProtectionStrict) usr)
+    route Proxy (Delayed captures method body server) = WithRequest $ \request ->
+      let mAuthData  = authData request
+          Route auth = server undefined undefined
+      in route (Proxy :: Proxy sublayout)
+               (Delayed captures
+                        method
+                        (authCheck mAuthData auth)
+                        (\a b -> Route b))
+      where
+        authCheck mAuthData auth = do
+          case mAuthData of
+            Nothing -> FailFatal <$> onMissingAuthData (authHandlers auth)
+            Just authData' -> do
+              mUsr <- (checkAuthStrict auth) authData'
+              return $ maybe (Fail err401)
+                             (Route . subServerStrict auth)
+                             mUsr
 
-            -- TODO FIX
-            -- Note: this may perform IO for each attempt at matching.
-            -- case r of
-            --   Route authProtectionStrict ->
-            -- authProtectionStrict <- subserver
-            -- case authData request of
-            --   Nothing -> return (Fail err404)
-            --   Just authData' -> do
-            --     mUsr <- (checkAuthStrict authProtectionStrict) authData'
-            --     case mUsr of
-            --       Nothing -> return (Fail err404)
-            --       Just usr -> return ((subServerStrict authProtectionStrict) usr) 
-              -- resp <- onMissingAuthData (authHandlers )
+-- | Authentication in Lax mode.
+instance
+#if MIN_VERSION_base(4,8,0)
+         {-# OVERLAPPABLE #-}
+#endif
+         (AuthData authdata , HasServer sublayout) => HasServer (AuthProtect authdata (usr :: *) 'Lax :> sublayout) where
 
-            -- case r of
-            --     -- Successful route match, so we extract the author-provided
-            --     -- auth data.
-            --     Right authProtectionStrict ->
-            --         case authData req of
-            --             -- could not pull authenticate data out of the request
-            --             Nothing -> do
-            --                 -- we're in strict mode: don't let the request go
-            --                 -- call the provided "on missing auth" handler
-            --                 resp <- onMissingAuthData (authHandlers authProtectionStrict)
-            --                 return $ Fail err404--(RouteMismatch resp)
+    type ServerT (AuthProtect authdata usr 'Lax :> sublayout) m = AuthProtected authdata usr (Maybe usr -> ServerT sublayout m) 'Lax
 
-            --             -- succesfully pulled auth data out of the Request
-            --             Just authData' -> do
-            --                 mUsr <- (checkAuthStrict authProtectionStrict) authData'
-            --                 case mUsr of
-            --                     -- this user is not authenticated.
-            --                     Nothing -> do
-            --                         resp <- onUnauthenticated (authHandlers authProtectionStrict) authData'
-            --                         return $ Fail err404-- (RouteMismatch resp)
-
-            --                     -- this user is authenticated.
-            --                     Just usr ->
-            --                         (return . Route . subServerStrict authProtectionStrict) usr
-            --     -- route did not match, propagate failure.
-            --     Left rMismatch ->
-            --         return (Fail err404)--(failWith rMismatch)
-
--- -- | Authentication in Lax mode.
--- instance
--- #if MIN_VERSION_base(4,8,0)
---          {-# OVERLAPPABLE #-}
--- #endif
---          (AuthData authdata , HasServer sublayout) => HasServer (AuthProtect authdata (usr :: *) 'Lax :> sublayout) where
-
---     type ServerT (AuthProtect authdata usr 'Lax :> sublayout) m = AuthProtected authdata usr (Maybe usr -> ServerT sublayout m) 'Lax
-
---     route _ subserver = WithRequest $ \req ->
---         route (Proxy :: Proxy sublayout) $ do
---             -- Note: this may perform IO for each attempt at matching.
---             rr <- routeResult <$> subserver
---                 -- Successful route match, so we extract the author-provided
---                 -- auth data.
---             case rr of
---                 -- route matched, extract author-provided lax authentication data
---                 Right authProtectionLax -> do
---                     -- extract a user from the request object and perform
---                     -- authentication on it. In Lax mode, we just pass `Maybe usr`
---                     -- to the autho.
---                     musr <- maybe (pure Nothing) (checkAuthLax authProtectionLax) (authData req)
---                     (return . Route . subServerLax authProtectionLax) musr
---                 -- route did not match, propagate failure
---                 Left rMismatch ->
---                     return (Fail err404) -- (failWith rMismatch)
+    route Proxy (Delayed captures method body server) = WithRequest $ \request ->
+      let mAuthData = authData request
+          Route auth = server undefined undefined
+      in route (Proxy :: Proxy sublayout)
+               (Delayed captures
+                        method
+                        (authCheck mAuthData auth)
+                        (\a b -> Route b))
+      where
+        authCheck mAuthData auth = do
+          mUsr <- maybe (pure Nothing) (checkAuthLax auth) mAuthData
+          return $ (Route . subServerLax auth) mUsr
 
 -- | When implementing the handler for a 'Get' endpoint,
 -- just like for 'Servant.API.Delete.Delete', 'Servant.API.Post.Post'

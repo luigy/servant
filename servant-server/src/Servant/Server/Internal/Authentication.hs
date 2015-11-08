@@ -1,9 +1,9 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE FlexibleInstances   #-}
 
 module Servant.Server.Internal.Authentication
 ( AuthProtected (..)
@@ -17,30 +17,34 @@ module Servant.Server.Internal.Authentication
 , jwtAuth
         ) where
 
-import           Control.Monad              (guard, (<=<))
-import qualified Data.ByteString            as B
-import           Data.ByteString.Base64     (decodeLenient)
+import           Control.Monad                      (guard, (<=<))
+import qualified Data.ByteString                    as B
+import           Data.ByteString.Base64             (decodeLenient)
 #if !MIN_VERSION_base(4,8,0)
-import           Data.Monoid                ((<>), mempty)
+import           Data.Monoid                        (mempty, (<>))
 #else
-import           Data.Monoid                ((<>))
+import           Data.Monoid                        ((<>))
 #endif
-import           Data.Proxy                 (Proxy (Proxy))
-import           Data.String                (fromString)
-import           Data.Word8                 (isSpace, toLower, _colon)
-import           GHC.TypeLits               (KnownSymbol, symbolVal)
-import           Data.Text.Encoding         (decodeUtf8)
-import           Data.Text                  (splitOn, Text)
-import           Network.HTTP.Types.Status  (status401)
-import           Network.Wai                (Request, Response, requestHeaders,
-                                             responseBuilder)
-import           Servant.API.Authentication (AuthPolicy (Strict, Lax),
-                                             AuthProtected,
-                                             BasicAuth (BasicAuth),
-                                             JWTAuth)
+import           Data.Proxy                         (Proxy (Proxy))
+import           Data.String                        (fromString)
+import           Data.Text                          (Text, splitOn)
+import           Data.Text.Encoding                 (decodeUtf8)
+import           Data.Word8                         (isSpace, toLower, _colon)
+import           GHC.TypeLits                       (KnownSymbol, symbolVal)
+import           Network.HTTP.Types.Status          (status401)
+import           Network.Wai                        (Request, Response,
+                                                     requestHeaders,
+                                                     responseBuilder)
+import           Servant.API.Authentication         (AuthPolicy (Strict, Lax),
+                                                     AuthProtected,
+                                                     BasicAuth (BasicAuth),
+                                                     JWTAuth)
+import           Servant.Server.Internal.ServantErr
 
-import            Web.JWT                    (JWT, UnverifiedJWT, VerifiedJWT, Secret, JSON)
-import qualified  Web.JWT as JWT             (decode, verify, secret)
+import           Web.JWT                            (JSON, JWT, Secret,
+                                                     UnverifiedJWT, VerifiedJWT)
+import qualified Web.JWT                            as JWT (decode, secret,
+                                                            verify)
 
 -- | Class to represent the ability to extract authentication-related
 -- data from a 'Request' object.
@@ -50,10 +54,10 @@ class AuthData a where
 -- | handlers to deal with authentication failures.
 data AuthHandlers authData = AuthHandlers
     {   -- we couldn't find the right type of auth data (or any, for that matter)
-        onMissingAuthData :: IO Response
+        onMissingAuthData :: IO ServantErr
     ,
         -- we found the right type of auth data in the request but the check failed
-        onUnauthenticated :: authData -> IO Response
+        onUnauthenticated :: authData -> IO ServantErr
     }
 
 -- | concrete type to provide when in 'Strict' mode.
@@ -98,8 +102,9 @@ basicAuthHandlers :: forall realm. KnownSymbol realm => AuthHandlers (BasicAuth 
 basicAuthHandlers =
     let realmBytes = (fromString . symbolVal) (Proxy :: Proxy realm)
         headerBytes = "Basic realm=\"" <> realmBytes <> "\""
-        authFailure = responseBuilder status401 [("WWW-Authenticate", headerBytes)] mempty in
-        AuthHandlers (return authFailure)  ((const . return) authFailure)
+        authFailure = err401 { errHeaders = [("WWW-Authenticate", headerBytes)] }
+    in
+        AuthHandlers (return authFailure) (const (return authFailure))
 
 -- | Basic authentication combinator with strict failure.
 basicAuthStrict :: KnownSymbol realm
@@ -121,14 +126,15 @@ instance AuthData JWTAuth where
   authData req = do
     -- We might want to write a proper parser for this? but split works fine...
     hdr <- lookup "Authorization" . requestHeaders $ req
-    ["Bearer", token] <- return . splitOn " " . decodeUtf8 $ hdr
+    "Bearer":token:_ <- return . splitOn " " . decodeUtf8 $ hdr
     _ <- JWT.decode token -- try decode it. otherwise it's not a proper token
     return token
 
 
 jwtAuthHandlers :: AuthHandlers JSON
 jwtAuthHandlers =
-  let authFailure = responseBuilder status401 [] mempty
+  -- let authFailure = responseBuilder status401 [] mempty
+  let authFailure = err401
   in AuthHandlers (return authFailure) ((const . return) authFailure)
 
 

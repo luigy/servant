@@ -11,6 +11,8 @@
 
 import Data.Aeson
 import Data.ByteString (ByteString)
+import Data.ByteString.Lazy.Char8 (unpack)
+import Data.ByteString.Builder (toLazyByteString)
 import Data.ByteString.Builder.Internal (byteStringCopy)
 import Data.Monoid ((<>))
 import Data.Text (Text)
@@ -21,6 +23,7 @@ import Network.Wai.Handler.Warp
 import Servant
 import Servant.API.Authentication
 import Servant.Server.Internal
+import Servant.Server.Internal.ServantErr
 import Servant.Server.Internal.Authentication (strictProtect, AuthHandlers(AuthHandlers))
 
 -- | Data we will use to test for authentication
@@ -40,12 +43,14 @@ isGoodCookie (CookieAuth cookie) = if cookie == "good cookie" then return (Just 
 cookieAuthHandlers :: AuthHandlers CookieAuth
 cookieAuthHandlers = AuthHandlers missingAuth notAuthenticated
   where
-    missingAuth :: IO Response
-    missingAuth = return $ (responseBuilder status401 [] "Missing Cookie header.")
+    missingAuth :: IO ServantErr
+    -- missingAuth = return $ (responseBuilder status401 [] "Missing Cookie header.")
+    missingAuth = return $ err401 { errReasonPhrase = "Missing Cookie header." }
 
-    notAuthenticated :: CookieAuth -> IO Response
+    notAuthenticated :: CookieAuth -> IO ServantErr
     notAuthenticated (CookieAuth cookie) = return $
-        responseBuilder status401 [] ("Invalid cookie: " <> byteStringCopy cookie)
+        -- responseBuilder status401 [] ("Invalid cookie: " <> byteStringCopy cookie)
+        err401 { errReasonPhrase = unpack . toLazyByteString $ "Invalid cookie: " <> (byteStringCopy cookie) }
 
 -- | 'AuthData' is a typeclass that provides a method to extract authentication
 -- data from a 'Request'

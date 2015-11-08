@@ -166,11 +166,13 @@ instance Functor Delayed where
    fmap f (Delayed a b c g) = Delayed a b c ((fmap.fmap.fmap) f g)
 
 
-addAuthCheck :: Delayed a
-             -> IO (RouteResult b)
-             -> Delayed a
+addAuthCheck :: Delayed (a -> b)
+             -> IO (RouteResult a)
+             -> Delayed b
 addAuthCheck (Delayed captures method body server) new =
-  Delayed captures method (combineRouteResults const body new) server
+  -- Delayed captures method (combineRouteResults const body new) server
+  -- -- Delayed captures method body server
+  Delayed captures method (combineRouteResults (,) body new) (\ x (y, v)  -> ($ v) <$> server x y)
 
 
 -- | Add a capture to the end of the capture block.
